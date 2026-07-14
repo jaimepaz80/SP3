@@ -42,6 +42,7 @@
             return Math.floor((current - start) / 86400000) + 1;
         }
 
+        // Función necesaria para localizar los archivos SP3 en el servidor del IGS
         function calcularGPSWeek(year, month, day) {
             const gpsEpoch = new Date(Date.UTC(1980, 0, 6)); 
             const current = new Date(Date.UTC(year, month - 1, day));
@@ -88,6 +89,7 @@
                 const doy = calcularDOY(year, month, day);
                 const doyStr = String(doy).padStart(3, '0');
                 
+                // Se calcula la semana GPS para las rutas de los archivos de productos
                 const gpsWeek = calcularGPSWeek(year, month, day);
                 const gpsWeekStr = String(gpsWeek).padStart(4, '0');
 
@@ -102,13 +104,13 @@
                     contenedorBotones.appendChild(btn);
                 };
 
-                // 1. Enlaces NAV
+                // 1. Enlaces NAV (Siguen usando Año y DOY)
                 ['IGS', 'WRD', 'BKG', 'GOP'].forEach(p => {
                     let filename = `BRDC00${p}_R_${year}${doyStr}0000_01D_MN.rnx.gz`;
                     crearBoton(`Descargar ${filename} (NAV)`, `https://igs.bkg.bund.de/root_ftp/IGS/BRDC/${year}/${doyStr}/${filename}`);
                 });
 
-                // 2. Enlaces SP3
+                // 2. Enlaces SP3 (Corregidos para usar carpeta 'products' y Semana GPS)
                 let sp3Filename = `IGS0OPSULT_${year}${doyStr}0000_01D_15M_ORB.SP3.gz`;
                 crearBoton(`Descargar ${sp3Filename} (SP3)`, `https://igs.bkg.bund.de/root_ftp/IGS/products/${gpsWeekStr}/${sp3Filename}`);
 
