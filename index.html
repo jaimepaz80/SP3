@@ -3,124 +3,248 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GNSSJP PRO - Extractor de Efemérides</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Descarga de Efemérides SP3 Ultra Rápidas</title>
     <style>
-        .console { font-family: 'Courier New', Courier, monospace; background-color: #050505; color: #00ff33; white-space: pre-wrap; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            font-size: 24px;
+            color: #0056b3;
+            text-align: center;
+        }
+        p.description {
+            color: #666;
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .file-upload {
+            border: 2px dashed #0056b3;
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px;
+            background-color: #eef5ff;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .custom-file-upload {
+            background-color: #0056b3;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            display: inline-block;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .custom-file-upload:hover {
+            background-color: #004494;
+        }
+        #fileNameDisplay {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #333;
+            font-weight: bold;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #resultArea {
+            margin-top: 25px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-left: 5px solid #0056b3;
+            display: none;
+        }
+        .download-link {
+            display: block;
+            background-color: #17a2b8;
+            color: white;
+            text-decoration: none;
+            padding: 12px;
+            margin-top: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .download-link:hover {
+            background-color: #138496;
+        }
+        .note {
+            font-size: 12px;
+            color: #d9534f;
+            margin-top: 10px;
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen font-sans p-4">
+<body>
 
-    <div class="container mx-auto max-w-2xl bg-gray-800 p-6 rounded shadow-lg border border-gray-700 mt-10">
-        <header class="border-b border-gray-700 pb-4 mb-6">
-            <h1 class="text-2xl font-bold text-green-400">GNSSJP PRO - IGS Downloader</h1>
-            <p class="text-gray-400 text-sm">Generador de enlaces directos (Bypass CORS) | "Dato mata relato"</p>
-        </header>
+<div class="container">
+    <h1>Descarga de SP3 Ultra Rápidas</h1>
+    <p class="description">Cargue su archivo de observación RINEX (p. ej., .obs, .20o, .21o, etc.) para extraer la fecha exacta de medición y obtener los enlaces directos de descarga de las efemérides IGS.</p>
 
-        <form id="form-extractor" onsubmit="procesarRinex(event)">
-            <div class="mb-4">
-                <label class="block text-sm mb-2 font-bold text-blue-400">1. Sube tu archivo RINEX (.obs) para extraer la fecha:</label>
-                <input type="file" id="obs_file" required accept=".obs,.rnx" class="w-full bg-gray-700 p-3 rounded border border-blue-500 text-white">
-            </div>
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded font-bold transition shadow-lg">Calcular y Generar Enlaces</button>
-        </form>
-
-        <div id="resultado-consola" class="console p-4 mt-6 h-32 overflow-y-auto border border-gray-700 rounded hidden"></div>
-        
-        <div id="enlaces-contenedor" class="mt-6 hidden">
-            <h2 class="text-lg font-bold text-yellow-400 mb-3 border-b border-gray-700 pb-2">2. Descarga Directa (Click para bajar al teléfono):</h2>
-            <div id="botones-descarga" class="grid grid-cols-1 gap-3">
-                </div>
-            <p class="text-xs text-gray-400 mt-4">* Nota: Descarga el archivo, descomprímelo en tu gestor de archivos y sube el .nav a la aplicación principal.</p>
-        </div>
+    <div class="file-upload">
+        <label for="rinexFile" class="custom-file-upload">
+            📂 Seleccionar Archivo RINEX
+        </label>
+        <input type="file" id="rinexFile" accept=".obs, .*o" onchange="updateFileName()">
+        <div id="fileNameDisplay">Ningún archivo seleccionado</div>
     </div>
 
-    <script>
-        function calcularDOY(year, month, day) {
-            const current = new Date(Date.UTC(year, month - 1, day));
-            const start = new Date(Date.UTC(year, 0, 1));
-            return Math.floor((current - start) / 86400000) + 1;
+    <button id="processBtn" onclick="processFile()" disabled>Analizar Archivo y Obtener Enlaces</button>
+
+    <div id="resultArea">
+        <h3 style="margin-top:0;">Resultados del Análisis:</h3>
+        <p><strong>Fecha Extraída (UTC):</strong> <span id="dateDisplay"></span></p>
+        <p><strong>Semana GPS:</strong> <span id="gpsWeekDisplay"></span></p>
+        <p><strong>Día GPS:</strong> <span id="gpsDayDisplay"></span></p>
+        <p><strong>Archivo SP3 Requerido:</strong> <span id="sp3FileDisplay"></span></p>
+
+        <div id="linksArea"></div>
+        
+        <p class="note">* Nota: Los enlaces de CDDIS (NASA) requieren que inicies sesión con una cuenta gratuita de Earthdata. Los enlaces FTP de IGN son directos y libres.</p>
+    </div>
+</div>
+
+<script>
+    function updateFileName() {
+        const fileInput = document.getElementById('rinexFile');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const processBtn = document.getElementById('processBtn');
+
+        if (fileInput.files.length > 0) {
+            fileNameDisplay.textContent = fileInput.files[0].name;
+            processBtn.disabled = false;
+        } else {
+            fileNameDisplay.textContent = "Ningún archivo seleccionado";
+            processBtn.disabled = true;
         }
+    }
 
-        // Función necesaria para localizar los archivos SP3 en el servidor del IGS
-        function calcularGPSWeek(year, month, day) {
-            const gpsEpoch = new Date(Date.UTC(1980, 0, 6)); 
-            const current = new Date(Date.UTC(year, month - 1, day));
-            const diffDays = Math.floor((current - gpsEpoch) / 86400000);
-            return Math.floor(diffDays / 7);
-        }
+    function processFile() {
+        const fileInput = document.getElementById('rinexFile');
+        if (fileInput.files.length === 0) return;
 
-        async function procesarRinex(e) {
-            e.preventDefault();
-            const file = document.getElementById('obs_file').files[0];
-            const consola = document.getElementById('resultado-consola');
-            const contenedorEnlaces = document.getElementById('enlaces-contenedor');
-            const contenedorBotones = document.getElementById('botones-descarga');
-            
-            consola.classList.remove('hidden');
-            contenedorEnlaces.classList.add('hidden');
-            contenedorBotones.innerHTML = '';
-            consola.innerHTML = "> Leyendo cabecera del archivo...\n";
+        const file = fileInput.files[0];
+        const reader = new FileReader();
 
-            try {
-                const slice = file.slice(0, 102400); 
-                const text = await slice.text();
-                const lines = text.split(/\r?\n/);
+        reader.onload = function(e) {
+            const content = e.target.result;
+            const lines = content.split('\n');
+            let firstDate = null;
+
+            // Buscar la época en el archivo RINEX
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
                 
-                let fechaEncontrada = null;
-                for (let line of lines) {
-                    if (line.startsWith('>')) {
-                        let p = line.substring(1).trim().split(/\s+/);
-                        if (p.length >= 6) {
-                            let y = parseInt(p[0]);
-                            if (y < 100) y += 2000;
-                            fechaEncontrada = { year: y, month: parseInt(p[1]), day: parseInt(p[2]), hour: parseInt(p[3]) };
-                            break;
-                        }
+                // Formato RINEX 3 (Empieza con > YYYY MM DD HH MM SS)
+                if (line.startsWith("> ")) {
+                    const parts = line.trim().split(/\s+/);
+                    if (parts.length >= 7) {
+                        const year = parseInt(parts[1]);
+                        const month = parseInt(parts[2]) - 1; // En JavaScript los meses van de 0 a 11
+                        const day = parseInt(parts[3]);
+                        const hour = parseInt(parts[4]);
+                        firstDate = new Date(Date.UTC(year, month, day, hour, 0, 0));
+                        break;
                     }
+                } 
+                // Formato RINEX 2 (Buscamos la cabecera TIME OF FIRST OBS o la primera época)
+                else if (line.includes("TIME OF FIRST OBS")) {
+                    const parts = line.trim().split(/\s+/);
+                    let year = parseInt(parts[0]);
+                    if (year < 100) year += (year >= 80 ? 1900 : 2000); // Ajuste de siglo si es necesario
+                    const month = parseInt(parts[1]) - 1;
+                    const day = parseInt(parts[2]);
+                    const hour = parseInt(parts[3]);
+                    firstDate = new Date(Date.UTC(year, month, day, hour, 0, 0));
+                    break;
                 }
-
-                if (!fechaEncontrada) {
-                    consola.innerHTML += "> [ERROR] No se encontró la etiqueta de tiempo '>' en la cabecera.\n";
-                    return;
-                }
-
-                const { year, month, day } = fechaEncontrada;
-                const doy = calcularDOY(year, month, day);
-                const doyStr = String(doy).padStart(3, '0');
-                
-                // Se calcula la semana GPS para las rutas de los archivos de productos
-                const gpsWeek = calcularGPSWeek(year, month, day);
-                const gpsWeekStr = String(gpsWeek).padStart(4, '0');
-
-                consola.innerHTML += `> Fecha detectada: ${year}-${month}-${day} | DOY: ${doyStr} | GPS Week: ${gpsWeekStr}\n`;
-                
-                const crearBoton = (texto, url) => {
-                    let btn = document.createElement('a');
-                    btn.href = url;
-                    btn.target = "_blank";
-                    btn.className = "bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded text-center block transition border border-green-500 shadow-md";
-                    btn.innerHTML = `⬇️ ${texto}`;
-                    contenedorBotones.appendChild(btn);
-                };
-
-                // 1. Enlaces NAV (Siguen usando Año y DOY)
-                ['IGS', 'WRD', 'BKG', 'GOP'].forEach(p => {
-                    let filename = `BRDC00${p}_R_${year}${doyStr}0000_01D_MN.rnx.gz`;
-                    crearBoton(`Descargar ${filename} (NAV)`, `https://igs.bkg.bund.de/root_ftp/IGS/BRDC/${year}/${doyStr}/${filename}`);
-                });
-
-                // 2. Enlaces SP3 (Corregidos para usar carpeta 'products' y Semana GPS)
-                let sp3Filename = `IGS0OPSULT_${year}${doyStr}0000_01D_15M_ORB.SP3.gz`;
-                crearBoton(`Descargar ${sp3Filename} (SP3)`, `https://igs.bkg.bund.de/root_ftp/IGS/products/${gpsWeekStr}/${sp3Filename}`);
-
-                consola.innerHTML += `> [ÉXITO] Enlaces generados correctamente.\n`;
-                contenedorEnlaces.classList.remove('hidden');
-
-            } catch (err) {
-                consola.innerHTML += `> [ERROR FATAL] ${err.message}\n`;
             }
-        }
-    </script>
+
+            if (firstDate) {
+                generateSp3Data(firstDate);
+            } else {
+                alert("No se pudo detectar la fecha de medición en el archivo. Asegúrese de que es un formato RINEX de observación válido.");
+            }
+        };
+
+        // Leer solo los primeros 50KB por si el archivo es gigante, ahorrando memoria
+        const blob = file.slice(0, 50000);
+        reader.readAsText(blob);
+    }
+
+    function generateSp3Data(date) {
+        // 1. Calcular Semana GPS y Día
+        // El Epoch de GPS es Enero 6, 1980
+        const gpsEpoch = new Date(Date.UTC(1980, 0, 6, 0, 0, 0));
+        const diffMs = date.getTime() - gpsEpoch.getTime();
+        const daysSinceEpoch = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const gpsWeek = Math.floor(daysSinceEpoch / 7);
+        const gpsDay = daysSinceEpoch % 7;
+
+        // 2. Determinar el bloque de la hora Ultra Rápida (00, 06, 12, 18)
+        const hour = date.getUTCHours();
+        let ultraHour = "00";
+        if (hour >= 18) ultraHour = "18";
+        else if (hour >= 12) ultraHour = "12";
+        else if (hour >= 6) ultraHour = "06";
+
+        // 3. Crear Nombre de Archivo: iguWWWWd_HH.sp3.Z
+        const fileName = `igu${gpsWeek}${gpsDay}_${ultraHour}.sp3.Z`;
+        
+        // 4. Crear Enlaces de Descarga (CDDIS y IGN FTP)
+        const cddisUrl = `https://gdc.cddis.eosdis.nasa.gov/pub/gps/products/${gpsWeek}/${fileName}`;
+        const ignUrl = `ftp://igs.ign.fr/pub/igs/products/${gpsWeek}/${fileName}`;
+
+        // Mostrar Resultados
+        document.getElementById('dateDisplay').textContent = date.toISOString().replace('T', ' ').substring(0, 19);
+        document.getElementById('gpsWeekDisplay').textContent = gpsWeek;
+        document.getElementById('gpsDayDisplay').textContent = gpsDay;
+        document.getElementById('sp3FileDisplay').textContent = fileName;
+
+        const linksArea = document.getElementById('linksArea');
+        linksArea.innerHTML = `
+            <a href="${cddisUrl}" class="download-link" target="_blank">⬇️ Descargar archivo desde CDDIS (NASA)</a>
+            <a href="${ignUrl}" class="download-link" style="background-color:#28a745;" target="_blank">⬇️ Descargar archivo desde IGN (FTP Libre)</a>
+        `;
+
+        document.getElementById('resultArea').style.display = 'block';
+    }
+</script>
+
 </body>
 </html>
