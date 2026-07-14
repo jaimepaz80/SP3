@@ -42,6 +42,13 @@
             return Math.floor((current - start) / 86400000) + 1;
         }
 
+        function calcularGPSWeek(year, month, day) {
+            const gpsEpoch = new Date(Date.UTC(1980, 0, 6)); 
+            const current = new Date(Date.UTC(year, month - 1, day));
+            const diffDays = Math.floor((current - gpsEpoch) / 86400000);
+            return Math.floor(diffDays / 7);
+        }
+
         async function procesarRinex(e) {
             e.preventDefault();
             const file = document.getElementById('obs_file').files[0];
@@ -80,10 +87,12 @@
                 const { year, month, day } = fechaEncontrada;
                 const doy = calcularDOY(year, month, day);
                 const doyStr = String(doy).padStart(3, '0');
-
-                consola.innerHTML += `> Fecha detectada: ${year}-${month}-${day} | DOY: ${doyStr}\n`;
                 
-                // Función auxiliar para crear botones uniformes
+                const gpsWeek = calcularGPSWeek(year, month, day);
+                const gpsWeekStr = String(gpsWeek).padStart(4, '0');
+
+                consola.innerHTML += `> Fecha detectada: ${year}-${month}-${day} | DOY: ${doyStr} | GPS Week: ${gpsWeekStr}\n`;
+                
                 const crearBoton = (texto, url) => {
                     let btn = document.createElement('a');
                     btn.href = url;
@@ -101,7 +110,7 @@
 
                 // 2. Enlaces SP3
                 let sp3Filename = `IGS0OPSULT_${year}${doyStr}0000_01D_15M_ORB.SP3.gz`;
-                crearBoton(`Descargar ${sp3Filename} (SP3)`, `https://igs.bkg.bund.de/root_ftp/IGS/PRODUCTS/${year}/${doyStr}/${sp3Filename}`);
+                crearBoton(`Descargar ${sp3Filename} (SP3)`, `https://igs.bkg.bund.de/root_ftp/IGS/products/${gpsWeekStr}/${sp3Filename}`);
 
                 consola.innerHTML += `> [ÉXITO] Enlaces generados correctamente.\n`;
                 contenedorEnlaces.classList.remove('hidden');
@@ -113,4 +122,3 @@
     </script>
 </body>
 </html>
-
