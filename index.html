@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GNSSJP PRO - Extractor de Efemérides</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .console { font-family: 'Courier New', Courier, monospace; background-color: #050505; color: #00ff33; white-space: pre-wrap; }
+        /* Clase adicional para asegurar el bloqueo visual y de interacción */
+        .btn-bloqueado { pointer-events: none; opacity: 0.6; cursor: not-allowed; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen font-sans p-4">
+
+    <div class="container mx-auto max-w-2xl bg-gray-800 p-6 rounded shadow-lg border border-gray-700 mt-10">
+        <header class="border-b border-gray-700 pb-4 mb-6">
+            <h1 class="text-2xl font-bold text-green-400">GNSSJP PRO - IGS Downloader</h1>
+            <p class="text-gray-400 text-sm">Generador de enlaces directos (Bypass CORS) | "Dato mata relato"</p>
+        </header>
+
+        <form id="form-extractor" onsubmit="procesarRinex(event)">
+            <div class="mb-4">
+                <label class="block text-sm mb-2 font-bold text-blue-400">1. Sube tu archivo RINEX (.obs) para extraer la fecha:</label>
+                <input type="file" id="obs_file" required accept=".obs,.rnx" class="w-full bg-gray-700 p-3 rounded border border-blue-500 text-white">
+            </div>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded font-bold transition shadow-lg">Calcular y Generar Enlaces</button>
+        </form>
+
+        <div id="resultado-consola" class="console p-4 mt-6 h-32 overflow-y-auto border border-gray-700 rounded hidden"></div>
+        
+        <div id="enlaces-contenedor" class="mt-6 hidden">
+            <h2 class="text-lg font-bold text-yellow-400 mb-3 border-b border-gray-700 pb-2">2. Descarga Directa (Click para bajar al teléfono):</h2>
+            <div id="botones-descarga" class="grid grid-cols-1 gap-3">
+                </div>
+            <p class="text-xs text-gray-400 mt-4">* Nota: Descarga el archivo, descomprímelo en tu gestor de archivos y sube el .nav a la aplicación principal.</p>
+        </div>
+    </div>
+
+    <script>
+        // Variable global para almacenar y limpiar el intervalo si el usuario sube otro archivo
+        let intervaloCronometro = null;
+
+        function calcularDOY(year, month, day) {
+            const current = new Date(Date.UTC(year, month - 1, day));
+            const start = new Date(Date.UTC(year, 0, 1));
+            return Math.floor((current - start) / 86400000) + 1;
+        }
+
+        async function procesarRinex(e) {
+            e.preventDefault();
+            const file = document.getElementById('obs_file').files[0];
+            const consola = document.getElementById('resultado-consola');
+            const contenedorEnlaces = document.getElementById('enlaces-contenedor');
+            const contenedorBotones = document.getElementById('botones-descarga');
+            
+            // Limpiar cualquier temporizador previo
+            if (intervaloCronometro) {
+                clearInterval(intervaloCronometro);
+                intervaloCronometro = null;
+            }
+            
+            consola.classList.remove('hidden');
+            contenedorEnlaces.classList.add('hidden');
+            contenedorBotones.innerHTML = '';
+            consola.innerHTML = "> Leyendo cabecera del archivo...\n";
+
+            try {
+                // Leemos solo los primeros 100 KB
+                const slice = file.slice(0, 102400); 
+                const text = await slice.text();
+                const lines = text.split(/\r?\n/);
+                
+                let fechaEncontrada = null;
+
+                for (let line of lines) {
+                    if (line.startsWith('>')) {
+                        let p = line.substring(1).trim().split(/\s+/);
+                        if (p.length >= 6) {
+                            let y = parseInt(p[0]);
+                            if (y < 100) y += 2000;
+                            fechaEncontrada = {
+                                year: y,
+                                month: parseInt(p[1]),
+                                day: parseInt(p[2]),
+                                hour: parseInt(p[3])
+                            };
+                            break; 
+                        }
+                    }
+                }
+
+                if (!fechaEncontrada) {
+                    consola.innerHTML += "> [ERROR] No se encontró la etiqueta de tiempo '>' en la cabecera.\n";
+                    return;
+                }
+
+                const { year, month, day, hour } = fechaEncontrada;
+                const doy = calcularDOY(year, month, day);
+                const doyStr = String(doy).padStart(3, '0');
+                
+                // Fecha objetivo: final del día UTC de la observación
+                const fechaFinDiaUTC = new Date(Date.UTC(year, month - 1, day, 23, 59, 59)).getTime();
+
+                consola.innerHTML += `> Fecha detectada: ${year}-${month}-${day} | Hora inicio: ${String(hour).padStart(2, '0')}:00\n`;
+                consola.innerHTML += `> Día del Año (DOY): ${doyStr}\n`;
+                consola.innerHTML += `> Construyendo rutas a servidores IGS/BKG...\n`;
+
+                const prefijos = ['IGS', 'WRD', 'BKG', 'GOP'];
+                
+                // Pre-creamos los elementos en el DOM para luego actualizarlos dinámicamente
+                const datosBotones = prefijos.map(p => {
+                    let filename = `BRDC00${p}_R_${year}${doyStr}0000_01D_MN.rnx.gz`;
+                    let url = `https://igs.bkg.bund.de/root_ftp/IGS/BRDC/${year}/${doyStr}/${filename}`;
+                    
+                    let btn = document.createElement('a');
+                    contenedorBotones.appendChild(btn);
+                    
+                    return { btn, filename, url };
+                });
+
+                contenedorEnlaces.classList.remove('hidden');
+
+                // Función central que evalúa el tiempo y repinta el estado de los botones
+                function actualizarEstadoBotones() {
+                    const ahoraUTC = new Date().getTime();
+                    const difMilisegundos = fechaFinDiaUTC - ahoraUTC;
+
+                    if (difMilisegundos > 0) {
+                        // AÚN NO ES PÚBLICO - MODO CUENTA REGRESIVA
+                        const h = Math.floor(difMilisegundos / (1000 * 60 * 60));
+                        const m = Math.floor((difMilisegundos % (1000 * 60 * 60)) / (1000 * 60));
+                        const s = Math.floor((difMilisegundos % (1000 * 60)) / 1000);
+
+                        datosBotones.forEach(({btn, filename}) => {
+                            btn.removeAttribute('href');
+                            btn.className = "btn-bloqueado bg-gray-700 text-gray-400 font-bold py-3 px-4 rounded text-center block border border-gray-600 shadow-inner";
+                            btn.innerHTML = `🔒 Faltan ${h}h ${m}m ${s}s para ${filename}`;
+                            btn.onclick = (e) => e.preventDefault();
+                        });
+                    } else {
+                        // ARCHIVO DISPONIBLE - MODO DESBLOQUEADO
+                        datosBotones.forEach(({btn, filename, url}) => {
+                            btn.href = url;
+                            btn.setAttribute('download', filename); 
+                            btn.className = "bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded text-center block transition border border-green-500 shadow-md";
+                            btn.innerHTML = `⬇️ Descargar ${filename} (Diario)`;
+                            btn.onclick = null; // Liberar evento de bloqueo
+                        });
+
+                        // Detenemos el cronómetro una vez que se desbloquean
+                        if (intervaloCronometro) {
+                            clearInterval(intervaloCronometro);
+                            intervaloCronometro = null;
+                            const consolaActual = document.getElementById('resultado-consola');
+                            consolaActual.innerHTML += `> [DESBLOQUEO] El día GPS ha cerrado. Archivos disponibles.\n`;
+                            // Auto-scroll al final de la consola
+                            consolaActual.scrollTop = consolaActual.scrollHeight; 
+                        }
+                    }
+                }
+
+                // Ejecutamos inmediatamente para pintar el estado inicial
+                actualizarEstadoBotones();
+
+                // Si aún falta tiempo, iniciamos el cronómetro a 1000ms (1 segundo)
+                if (fechaFinDiaUTC > new Date().getTime()) {
+                    intervaloCronometro = setInterval(actualizarEstadoBotones, 1000);
+                    consola.innerHTML += `> [AVISO] Cronómetro de seguridad en marcha. Los botones se desbloquearán automáticamente.\n`;
+                } else {
+                    consola.innerHTML += `> [ÉXITO] Interfaz generada y archivos listos para descarga.\n`;
+                }
+
+            } catch (err) {
+                consola.innerHTML += `> [ERROR FATAL] ${err.message}\n`;
+            }
+        }
+    </script>
+</body>
+</html>
+
