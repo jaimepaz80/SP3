@@ -31,7 +31,7 @@
             <h2 class="text-lg font-bold text-yellow-400 mb-3 border-b border-gray-700 pb-2">2. Descarga Directa (Click para bajar al teléfono):</h2>
             <div id="botones-descarga" class="grid grid-cols-1 gap-3">
                 </div>
-            <p class="text-xs text-gray-400 mt-4">* Nota: Descarga el archivo, descomprímelo en tu gestor de archivos y sube el .nav a la aplicación principal.</p>
+            <p class="text-xs text-gray-400 mt-4">* Nota: Descarga el archivo, descomprímelo en tu gestor de archivos y sube el archivo a la aplicación principal.</p>
         </div>
     </div>
 
@@ -55,38 +55,14 @@
             consola.innerHTML = "> Leyendo cabecera del archivo...\n";
 
             try {
-                // Leemos solo los primeros 100 KB para no saturar la RAM
                 const slice = file.slice(0, 102400); 
-                
-                // CORRECCIÓN: Uso de FileReader en lugar de slice.text() para garantizar ejecución en WebViews
-                const text = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (event) => resolve(event.target.result);
-                    reader.onerror = (error) => reject(new Error("Fallo de lectura nativa del archivo en el dispositivo."));
-                    reader.readAsText(slice);
-                });
-
+                const text = await slice.text();
                 const lines = text.split(/\r?\n/);
+                
                 let fechaEncontrada = null;
 
                 for (let line of lines) {
-                    // CORRECCIÓN: Lógica universal para RINEX 2 y RINEX 3 leyendo "TIME OF FIRST OBS" en la cabecera
-                    if (line.includes('TIME OF FIRST OBS')) {
-                        let p = line.trim().split(/\s+/);
-                        if (p.length >= 6) {
-                            let y = parseInt(p[0]);
-                            if (y < 100) y += (y > 70 ? 1900 : 2000); 
-                            fechaEncontrada = {
-                                year: y,
-                                month: parseInt(p[1]),
-                                day: parseInt(p[2]),
-                                hour: parseInt(p[3])
-                            };
-                            break;
-                        }
-                    } 
-                    // Fallback para épocas exclusivas de RINEX 3 si la cabecera está incompleta
-                    else if (line.startsWith('>')) {
+                    if (line.startsWith('>')) {
                         let p = line.substring(1).trim().split(/\s+/);
                         if (p.length >= 6) {
                             let y = parseInt(p[0]);
@@ -103,37 +79,44 @@
                 }
 
                 if (!fechaEncontrada) {
-                    consola.innerHTML += "> [ERROR] No se detectó 'TIME OF FIRST OBS' ni etiqueta de época '>' en la cabecera.\n";
+                    consola.innerHTML += "> [ERROR] No se encontró la etiqueta de tiempo '>' en la cabecera.\n";
                     return;
                 }
 
                 const { year, month, day, hour } = fechaEncontrada;
                 const doy = calcularDOY(year, month, day);
                 const doyStr = String(doy).padStart(3, '0');
-                const hourStr = String(hour).padStart(2, '0');
 
-                consola.innerHTML += `> Fecha detectada: ${year}-${month}-${day} | Hora inicio: ${hourStr}:00\n`;
-                consola.innerHTML += `> Día del Año (DOY): ${doyStr}\n`;
+                consola.innerHTML += `> Fecha detectada: ${year}-${month}-${day}\n`;
                 consola.innerHTML += `> Construyendo rutas a servidores IGS/BKG...\n`;
 
-                const prefijos = ['IGS', 'WRD', 'BKG', 'GOP'];
-                
-                // Generamos los archivos diarios consolidados
-                prefijos.forEach(p => {
+                // 1. Generar enlaces BRDC (Navegación)
+                const prefijosNav = ['IGS', 'WRD', 'BKG', 'GOP'];
+                prefijosNav.forEach(p => {
                     let filename = `BRDC00${p}_R_${year}${doyStr}0000_01D_MN.rnx.gz`;
                     let url = `https://igs.bkg.bund.de/root_ftp/IGS/BRDC/${year}/${doyStr}/${filename}`;
                     
                     let btn = document.createElement('a');
                     btn.href = url;
-                    // CORRECCIÓN: Atributos para eludir el bloqueo de WebView y forzar descarga
-                    btn.setAttribute("download", filename);
-                    btn.target = "_top"; 
-                    btn.className = "bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded text-center block transition border border-green-500 shadow-md cursor-pointer";
-                    btn.innerHTML = `⬇️ Descargar ${filename} (Diario)`;
+                    btn.target = "_blank";
+                    btn.className = "bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded text-center block transition border border-green-500 shadow-md";
+                    btn.innerHTML = `⬇️ Descargar ${filename} (NAV)`;
                     contenedorBotones.appendChild(btn);
                 });
 
-                consola.innerHTML += `> [ÉXITO] Enlaces generados y preparados para descarga nativa.\n`;
+                // 2. Generar enlaces SP3 (Efemérides Precisas - Ultra Rapid)
+                // Nota: Los SP3 se encuentran en la carpeta PRODUCTS/
+                let sp3Filename = `IGS0OPSULT_${year}${doyStr}0000_01D_15M_ORB.SP3.gz`;
+                let sp3Url = `https://igs.bkg.bund.de/root_ftp/IGS/PRODUCTS/${year}/${doyStr}/${sp3Filename}`;
+                
+                let btnSp3 = document.createElement('a');
+                btnSp3.href = sp3Url;
+                btnSp3.target = "_blank";
+                btnSp3.className = "bg-purple-700 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded text-center block transition border border-purple-500 shadow-md mt-2";
+                btnSp3.innerHTML = `⬇️ Descargar ${sp3Filename} (SP3)`;
+                contenedorBotones.appendChild(btnSp3);
+
+                consola.innerHTML += `> [ÉXITO] Enlaces generados (NAV + SP3).\n`;
                 contenedorEnlaces.classList.remove('hidden');
 
             } catch (err) {
@@ -143,3 +126,4 @@
     </script>
 </body>
 </html>
+
