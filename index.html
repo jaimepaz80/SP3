@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .console { font-family: 'Courier New', Courier, monospace; background-color: #050505; color: #00ff33; white-space: pre-wrap; }
-        .btn-bloqueado { pointer-events: none; opacity: 0.6; cursor: not-allowed; filter: grayscale(100%); }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen font-sans p-4">
@@ -26,23 +25,17 @@
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded font-bold transition shadow-lg">Calcular y Generar Enlaces</button>
         </form>
 
-        <div id="resultado-consola" class="console p-4 mt-6 h-56 overflow-y-auto border border-gray-700 rounded hidden"></div>
+        <div id="resultado-consola" class="console p-4 mt-6 h-32 overflow-y-auto border border-gray-700 rounded hidden"></div>
         
         <div id="enlaces-contenedor" class="mt-6 hidden">
-            <h2 class="text-lg font-bold text-yellow-400 mb-3 border-b border-gray-700 pb-2">2. Descarga Directa:</h2>
-            <div id="botones-descarga" class="grid grid-cols-1 gap-4">
+            <h2 class="text-lg font-bold text-yellow-400 mb-3 border-b border-gray-700 pb-2">2. Descarga Directa (Click para bajar al teléfono):</h2>
+            <div id="botones-descarga" class="grid grid-cols-1 gap-3">
                 </div>
-            <p class="text-xs text-gray-400 mt-4">* Nota: El archivo descargado debe ser descomprimido (.gz) antes de usarse en el motor matemático.</p>
+            <p class="text-xs text-gray-400 mt-4">* Nota: Descarga el archivo, descomprímelo en tu gestor de archivos y sube el .nav a la aplicación principal.</p>
         </div>
     </div>
 
     <script>
-        let intervaloCronometro = null;
-        let relojUTCIntervalo = null;
-        
-        // Retraso empírico de servidores BKG para compilar los archivos tras la medianoche UTC
-        const HORAS_RETRASO_PUBLICACION = 0; 
-
         function calcularDOY(year, month, day) {
             const current = new Date(Date.UTC(year, month - 1, day));
             const start = new Date(Date.UTC(year, 0, 1));
@@ -56,23 +49,44 @@
             const contenedorEnlaces = document.getElementById('enlaces-contenedor');
             const contenedorBotones = document.getElementById('botones-descarga');
             
-            if (intervaloCronometro) clearInterval(intervaloCronometro);
-            if (relojUTCIntervalo) clearInterval(relojUTCIntervalo);
-            
             consola.classList.remove('hidden');
             contenedorEnlaces.classList.add('hidden');
             contenedorBotones.innerHTML = '';
             consola.innerHTML = "> Leyendo cabecera del archivo...\n";
 
             try {
+                // Leemos solo los primeros 100 KB para no saturar la RAM
                 const slice = file.slice(0, 102400); 
-                const text = await slice.text();
-                const lines = text.split(/\r?\n/);
                 
+                // CORRECCIÓN: Uso de FileReader en lugar de slice.text() para garantizar ejecución en WebViews
+                const text = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => resolve(event.target.result);
+                    reader.onerror = (error) => reject(new Error("Fallo de lectura nativa del archivo en el dispositivo."));
+                    reader.readAsText(slice);
+                });
+
+                const lines = text.split(/\r?\n/);
                 let fechaEncontrada = null;
 
                 for (let line of lines) {
-                    if (line.startsWith('>')) {
+                    // CORRECCIÓN: Lógica universal para RINEX 2 y RINEX 3 leyendo "TIME OF FIRST OBS" en la cabecera
+                    if (line.includes('TIME OF FIRST OBS')) {
+                        let p = line.trim().split(/\s+/);
+                        if (p.length >= 6) {
+                            let y = parseInt(p[0]);
+                            if (y < 100) y += (y > 70 ? 1900 : 2000); 
+                            fechaEncontrada = {
+                                year: y,
+                                month: parseInt(p[1]),
+                                day: parseInt(p[2]),
+                                hour: parseInt(p[3])
+                            };
+                            break;
+                        }
+                    } 
+                    // Fallback para épocas exclusivas de RINEX 3 si la cabecera está incompleta
+                    else if (line.startsWith('>')) {
                         let p = line.substring(1).trim().split(/\s+/);
                         if (p.length >= 6) {
                             let y = parseInt(p[0]);
@@ -83,110 +97,44 @@
                                 day: parseInt(p[2]),
                                 hour: parseInt(p[3])
                             };
-                            break; 
+                            break;
                         }
                     }
                 }
 
                 if (!fechaEncontrada) {
-                    consola.innerHTML += "> [ERROR] No se encontró la etiqueta de tiempo '>' en la cabecera.\n";
+                    consola.innerHTML += "> [ERROR] No se detectó 'TIME OF FIRST OBS' ni etiqueta de época '>' en la cabecera.\n";
                     return;
                 }
 
                 const { year, month, day, hour } = fechaEncontrada;
                 const doy = calcularDOY(year, month, day);
                 const doyStr = String(doy).padStart(3, '0');
-                
-                // Cálculo estricto de tiempo
-                const fechaFinDiaUTC = new Date(Date.UTC(year, month - 1, day, 23, 59, 59)).getTime();
-                const fechaPublicacionReal = fechaFinDiaUTC + (HORAS_RETRASO_PUBLICACION * 60 * 60 * 1000);
+                const hourStr = String(hour).padStart(2, '0');
 
-                consola.innerHTML += `> Fecha archivo detectada: ${year}-${month}-${day} | Inicio: ${String(hour).padStart(2, '0')}:00\n`;
+                consola.innerHTML += `> Fecha detectada: ${year}-${month}-${day} | Hora inicio: ${hourStr}:00\n`;
                 consola.innerHTML += `> Día del Año (DOY): ${doyStr}\n`;
-                consola.innerHTML += `> Cierre del día GPS (UTC): ${new Date(fechaFinDiaUTC).toUTCString()}\n`;
-                consola.innerHTML += `> --------------------------------------------------\n`;
-                
-                // Elemento para el reloj UTC en vivo dentro de la consola
-                const lineaRelojId = "reloj-vivo";
-                consola.innerHTML += `<span id="${lineaRelojId}"></span>\n`;
-                consola.innerHTML += `> --------------------------------------------------\n`;
+                consola.innerHTML += `> Construyendo rutas a servidores IGS/BKG...\n`;
 
-                const servidores = [
-                    { prefijo: 'IGS', nombre: 'Red Global IGS' },
-                    { prefijo: 'WRD', nombre: 'Red Mundial BKG' },
-                    { prefijo: 'BKG', nombre: 'Agencia Federal BKG' },
-                    { prefijo: 'GOP', nombre: 'Observatorio Geodésico Pecný' }
-                ];
+                const prefijos = ['IGS', 'WRD', 'BKG', 'GOP'];
                 
-                const datosBotones = servidores.map(srv => {
-                    let filename = `BRDC00${srv.prefijo}_R_${year}${doyStr}0000_01D_MN.rnx.gz`;
+                // Generamos los archivos diarios consolidados
+                prefijos.forEach(p => {
+                    let filename = `BRDC00${p}_R_${year}${doyStr}0000_01D_MN.rnx.gz`;
                     let url = `https://igs.bkg.bund.de/root_ftp/IGS/BRDC/${year}/${doyStr}/${filename}`;
                     
                     let btn = document.createElement('a');
+                    btn.href = url;
+                    // CORRECCIÓN: Atributos para eludir el bloqueo de WebView y forzar descarga
+                    btn.setAttribute("download", filename);
+                    btn.target = "_top"; 
+                    btn.className = "bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded text-center block transition border border-green-500 shadow-md cursor-pointer";
+                    btn.innerHTML = `⬇️ Descargar ${filename} (Diario)`;
                     contenedorBotones.appendChild(btn);
-                    
-                    return { btn, filename, url, nombreServidor: srv.nombre };
                 });
 
+                consola.innerHTML += `> [ÉXITO] Enlaces generados y preparados para descarga nativa.\n`;
                 contenedorEnlaces.classList.remove('hidden');
-
-                function actualizarEstadoBotonesYReloj() {
-                    const ahoraUTC = new Date().getTime();
-                    const difMilisegundos = fechaPublicacionReal - ahoraUTC;
-
-                    // Actualizar Reloj en Consola
-                    const relojEl = document.getElementById(lineaRelojId);
-                    if (relojEl) {
-                        relojEl.innerText = `> Hora actual UTC: ${new Date().toUTCString()}`;
-                    }
-
-                    if (difMilisegundos > 0) {
-                        // AÚN NO DISPONIBLE - BLOQUEADO
-                        const h = Math.floor(difMilisegundos / (1000 * 60 * 60));
-                        const m = Math.floor((difMilisegundos % (1000 * 60 * 60)) / (1000 * 60));
-                        const s = Math.floor((difMilisegundos % (1000 * 60)) / 1000);
-
-                        datosBotones.forEach(({btn, filename, nombreServidor}) => {
-                            btn.removeAttribute('href');
-                            btn.className = "btn-bloqueado bg-gray-800 text-gray-400 py-3 px-4 rounded text-left block border-2 border-red-900 shadow-inner";
-                            btn.innerHTML = `
-                                <div class="text-sm font-bold text-red-500 mb-1">⏳ BLOQUEADO - Faltan ${h}h ${m}m ${s}s</div>
-                                <div class="text-xs mt-1">Servidor: <span class="text-gray-300">${nombreServidor}</span></div>
-                                <div class="text-xs">Archivo: <span class="text-gray-300">${filename}</span></div>
-                                <div class="mt-2 text-xs font-bold text-yellow-600 bg-gray-900 p-1 inline-block rounded border border-yellow-800">TIPO: NAV (Efemérides Broadcast RINEX 3) | NO ES SP3</div>
-                            `;
-                            btn.onclick = (e) => e.preventDefault();
-                        });
-                    } else {
-                        // DISPONIBLE - DESCARGA
-                        datosBotones.forEach(({btn, filename, url, nombreServidor}) => {
-                            btn.href = url;
-                            btn.setAttribute('download', filename); 
-                            btn.className = "bg-green-700 hover:bg-green-600 text-white py-3 px-4 rounded text-left block transition border border-green-500 shadow-md";
-                            btn.innerHTML = `
-                                <div class="font-bold text-lg mb-1">⬇️ DESCARGAR</div>
-                                <div class="text-xs mt-1 font-semibold text-green-200">Servidor: ${nombreServidor}</div>
-                                <div class="text-xs font-semibold text-green-200">Archivo: ${filename}</div>
-                                <div class="mt-2 text-xs font-bold text-yellow-300 bg-green-900 p-1 inline-block rounded border border-green-400">TIPO: NAV (Efemérides Broadcast RINEX 3) | NO ES SP3</div>
-                            `;
-                            btn.onclick = null; 
-                        });
-
-                        // Detenemos cronómetro de botones (pero mantenemos el reloj UTC de consola activo)
-                        if (intervaloCronometro) {
-                            clearInterval(intervaloCronometro);
-                            intervaloCronometro = null;
-                            const consolaActual = document.getElementById('resultado-consola');
-                            consolaActual.innerHTML += `> [DESBLOQUEO] Archivos publicados. Botones activos.\n`;
-                            consolaActual.scrollTop = consolaActual.scrollHeight; 
-                        }
-                    }
-                }
-
-                actualizarEstadoBotonesYReloj();
-
-                // Bucle rápido (cada segundo) para actualizar reloj y cuenta regresiva
-                intervaloCronometro = setInterval(actualizarEstadoBotonesYReloj, 1000);
 
             } catch (err) {
                 consola.innerHTML += `> [ERROR FATAL] ${err.message}\n`;
