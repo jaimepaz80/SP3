@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .console { font-family: 'Courier New', Courier, monospace; background-color: #050505; color: #00ff33; white-space: pre-wrap; }
-        /* Clase adicional para asegurar el bloqueo visual y de interacción */
         .btn-bloqueado { pointer-events: none; opacity: 0.6; cursor: not-allowed; }
     </style>
 </head>
@@ -27,19 +26,23 @@
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded font-bold transition shadow-lg">Calcular y Generar Enlaces</button>
         </form>
 
-        <div id="resultado-consola" class="console p-4 mt-6 h-32 overflow-y-auto border border-gray-700 rounded hidden"></div>
+        <div id="resultado-consola" class="console p-4 mt-6 h-40 overflow-y-auto border border-gray-700 rounded hidden"></div>
         
         <div id="enlaces-contenedor" class="mt-6 hidden">
             <h2 class="text-lg font-bold text-yellow-400 mb-3 border-b border-gray-700 pb-2">2. Descarga Directa (Click para bajar al teléfono):</h2>
-            <div id="botones-descarga" class="grid grid-cols-1 gap-3">
+            <div id="botones-descarga" class="grid grid-cols-1 gap-4">
                 </div>
-            <p class="text-xs text-gray-400 mt-4">* Nota: Descarga el archivo, descomprímelo en tu gestor de archivos y sube el .nav a la aplicación principal.</p>
+            <p class="text-xs text-gray-400 mt-4">* Nota: Los archivos BRDC son efemérides transmitidas (Navegación). Descomprímelo y sube el archivo resultante a tu aplicación principal.</p>
         </div>
     </div>
 
     <script>
-        // Variable global para almacenar y limpiar el intervalo si el usuario sube otro archivo
         let intervaloCronometro = null;
+        
+        // [MODIFICACIÓN QUIRÚRGICA REQUERIDA] 
+        // Horas que tarda el servidor BKG en compilar y publicar el archivo DESPUÉS de las 23:59:59 UTC.
+        // Si lo dejas en 0, se habilitará a la medianoche UTC exacta.
+        const HORAS_RETRASO_PUBLICACION = 0; 
 
         function calcularDOY(year, month, day) {
             const current = new Date(Date.UTC(year, month - 1, day));
@@ -54,7 +57,6 @@
             const contenedorEnlaces = document.getElementById('enlaces-contenedor');
             const contenedorBotones = document.getElementById('botones-descarga');
             
-            // Limpiar cualquier temporizador previo
             if (intervaloCronometro) {
                 clearInterval(intervaloCronometro);
                 intervaloCronometro = null;
@@ -66,7 +68,6 @@
             consola.innerHTML = "> Leyendo cabecera del archivo...\n";
 
             try {
-                // Leemos solo los primeros 100 KB
                 const slice = file.slice(0, 102400); 
                 const text = await slice.text();
                 const lines = text.split(/\r?\n/);
@@ -99,76 +100,82 @@
                 const doy = calcularDOY(year, month, day);
                 const doyStr = String(doy).padStart(3, '0');
                 
-                // Fecha objetivo: final del día UTC de la observación
+                // Calculamos el cierre del día UTC y le sumamos el tiempo de retraso de publicación del servidor
                 const fechaFinDiaUTC = new Date(Date.UTC(year, month - 1, day, 23, 59, 59)).getTime();
+                const fechaPublicacionReal = fechaFinDiaUTC + (HORAS_RETRASO_PUBLICACION * 60 * 60 * 1000);
 
                 consola.innerHTML += `> Fecha detectada: ${year}-${month}-${day} | Hora inicio: ${String(hour).padStart(2, '0')}:00\n`;
                 consola.innerHTML += `> Día del Año (DOY): ${doyStr}\n`;
-                consola.innerHTML += `> Construyendo rutas a servidores IGS/BKG...\n`;
-
-                const prefijos = ['IGS', 'WRD', 'BKG', 'GOP'];
                 
-                // Pre-creamos los elementos en el DOM para luego actualizarlos dinámicamente
-                const datosBotones = prefijos.map(p => {
-                    let filename = `BRDC00${p}_R_${year}${doyStr}0000_01D_MN.rnx.gz`;
+                // Definimos los servidores y descripciones exactas para la UI
+                const servidores = [
+                    { prefijo: 'IGS', nombre: 'Red Global IGS' },
+                    { prefijo: 'WRD', nombre: 'Red Mundial BKG' },
+                    { prefijo: 'BKG', nombre: 'Agencia Federal BKG' },
+                    { prefijo: 'GOP', nombre: 'Observatorio Geodésico Pecný' }
+                ];
+                
+                const datosBotones = servidores.map(srv => {
+                    let filename = `BRDC00${srv.prefijo}_R_${year}${doyStr}0000_01D_MN.rnx.gz`;
                     let url = `https://igs.bkg.bund.de/root_ftp/IGS/BRDC/${year}/${doyStr}/${filename}`;
                     
                     let btn = document.createElement('a');
                     contenedorBotones.appendChild(btn);
                     
-                    return { btn, filename, url };
+                    return { btn, filename, url, nombreServidor: srv.nombre };
                 });
 
                 contenedorEnlaces.classList.remove('hidden');
 
-                // Función central que evalúa el tiempo y repinta el estado de los botones
                 function actualizarEstadoBotones() {
                     const ahoraUTC = new Date().getTime();
-                    const difMilisegundos = fechaFinDiaUTC - ahoraUTC;
+                    const difMilisegundos = fechaPublicacionReal - ahoraUTC;
 
                     if (difMilisegundos > 0) {
-                        // AÚN NO ES PÚBLICO - MODO CUENTA REGRESIVA
                         const h = Math.floor(difMilisegundos / (1000 * 60 * 60));
                         const m = Math.floor((difMilisegundos % (1000 * 60 * 60)) / (1000 * 60));
                         const s = Math.floor((difMilisegundos % (1000 * 60)) / 1000);
 
-                        datosBotones.forEach(({btn, filename}) => {
+                        datosBotones.forEach(({btn, filename, nombreServidor}) => {
                             btn.removeAttribute('href');
-                            btn.className = "btn-bloqueado bg-gray-700 text-gray-400 font-bold py-3 px-4 rounded text-center block border border-gray-600 shadow-inner";
-                            btn.innerHTML = `🔒 Faltan ${h}h ${m}m ${s}s para ${filename}`;
+                            btn.className = "btn-bloqueado bg-gray-700 text-gray-400 py-3 px-4 rounded text-left block border border-gray-600 shadow-inner";
+                            btn.innerHTML = `
+                                <div class="text-sm font-bold text-red-400">🔒 BLOQUEADO - Faltan ${h}h ${m}m ${s}s</div>
+                                <div class="text-xs mt-1">Servidor: ${nombreServidor} | Archivo: ${filename}</div>
+                                <div class="text-xs text-gray-500">Tipo: Efemérides de Navegación (BRDC)</div>
+                            `;
                             btn.onclick = (e) => e.preventDefault();
                         });
                     } else {
-                        // ARCHIVO DISPONIBLE - MODO DESBLOQUEADO
-                        datosBotones.forEach(({btn, filename, url}) => {
+                        datosBotones.forEach(({btn, filename, url, nombreServidor}) => {
                             btn.href = url;
                             btn.setAttribute('download', filename); 
-                            btn.className = "bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded text-center block transition border border-green-500 shadow-md";
-                            btn.innerHTML = `⬇️ Descargar ${filename} (Diario)`;
-                            btn.onclick = null; // Liberar evento de bloqueo
+                            btn.className = "bg-green-700 hover:bg-green-600 text-white py-3 px-4 rounded text-left block transition border border-green-500 shadow-md";
+                            btn.innerHTML = `
+                                <div class="font-bold text-lg">⬇️ DESCARGAR</div>
+                                <div class="text-xs mt-1 font-semibold text-yellow-300">Servidor: ${nombreServidor} | Archivo: ${filename}</div>
+                                <div class="text-xs">Tipo: Efemérides de Navegación (BRDC)</div>
+                            `;
+                            btn.onclick = null; 
                         });
 
-                        // Detenemos el cronómetro una vez que se desbloquean
                         if (intervaloCronometro) {
                             clearInterval(intervaloCronometro);
                             intervaloCronometro = null;
                             const consolaActual = document.getElementById('resultado-consola');
-                            consolaActual.innerHTML += `> [DESBLOQUEO] El día GPS ha cerrado. Archivos disponibles.\n`;
-                            // Auto-scroll al final de la consola
+                            consolaActual.innerHTML += `> [DESBLOQUEO] Tiempo de compilación finalizado. Archivos disponibles.\n`;
                             consolaActual.scrollTop = consolaActual.scrollHeight; 
                         }
                     }
                 }
 
-                // Ejecutamos inmediatamente para pintar el estado inicial
                 actualizarEstadoBotones();
 
-                // Si aún falta tiempo, iniciamos el cronómetro a 1000ms (1 segundo)
-                if (fechaFinDiaUTC > new Date().getTime()) {
+                if (fechaPublicacionReal > new Date().getTime()) {
                     intervaloCronometro = setInterval(actualizarEstadoBotones, 1000);
-                    consola.innerHTML += `> [AVISO] Cronómetro de seguridad en marcha. Los botones se desbloquearán automáticamente.\n`;
+                    consola.innerHTML += `> [INFO] Motor de cuenta regresiva activo. Bloqueo de seguridad habilitado hasta la publicación.\n`;
                 } else {
-                    consola.innerHTML += `> [ÉXITO] Interfaz generada y archivos listos para descarga.\n`;
+                    consola.innerHTML += `> [INFO] El tiempo de publicación UTC ya se cumplió. Enlaces activos.\n`;
                 }
 
             } catch (err) {
